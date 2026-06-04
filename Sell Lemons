@@ -1,0 +1,711 @@
+--// Rayfield UI
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Vibe Code Central / Sell Lemons",
+    LoadingTitle = "Vibe Codey Automation",
+    LoadingSubtitle = "100% UI-Less Native Automation",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false,
+})
+
+local MainTab = Window:CreateTab("Main", 4483362458)
+
+--// Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService") 
+
+--// Variables & Configuration State
+local AutoBuy = false
+local AutoUpgrade = false
+local AutoPower = false
+local AutoFruit = false
+local AutoPhone = false
+local AutoRebirth = false
+local AutoEvolve = false
+local AutoAscend = false
+local AutoCashDrop = false
+local AutoRace = false     
+local AutoTrade = false    
+local AutoVine = false     
+local TARGET_MULTIPLIER = 100 
+
+local stats = { 
+    buys = 0, upgrades = 0, powers = 0, fruit = 0, rebirths = 0, 
+    evolves = 0, ascends = 0, cashdrops = 0, phones = 0,
+    races = 0, trades = 0, vines = 0 
+}
+
+--// Generate UI Components
+MainTab:CreateToggle({
+    Name = "Auto Buy",
+    CurrentValue = false,
+    Flag = "AutoBuy",
+    Callback = function(v) AutoBuy = v end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Upgrade",
+    CurrentValue = false,
+    Flag = "AutoUpgrade",
+    Callback = function(v) AutoUpgrade = v end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Buy Power (UI-Less)",
+    CurrentValue = false,
+    Flag = "AutoPower",
+    Callback = function(v) AutoPower = v end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Fruit",
+    CurrentValue = false,
+    Flag = "AutoFruit",
+    Callback = function(v) AutoFruit = v end
+})
+
+MainTab:CreateSection("--- Prestige & Deals ---")
+
+MainTab:CreateToggle({
+    Name = "Auto Phone Deals (Native UI-Less)",
+    CurrentValue = false,
+    Flag = "AutoPhone",
+    Callback = function(v) AutoPhone = v end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Rebirth (UI-Less)",
+    CurrentValue = false,
+    Flag = "AutoRebirth",
+    Callback = function(v) AutoRebirth = v end
+})
+
+MainTab:CreateDropdown({
+    Name = "Rebirth Multiplier Target",
+    Options = {"100", "200", "300", "400", "500", "600", "700", "800", "900", "1000"},
+    CurrentOption = {"100"},
+    MultipleOptions = false,
+    Flag = "RebirthMultiTarget",
+    Callback = function(Option)
+        local choice = type(Option) == "table" and Option[1] or Option
+        TARGET_MULTIPLIER = tonumber(choice) or 100
+    end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Evolve (UI-Less)",
+    CurrentValue = false,
+    Flag = "AutoEvolve",
+    Callback = function(v) AutoEvolve = v end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Ascend (UI-Less)",
+    CurrentValue = false,
+    Flag = "AutoAscend",
+    Callback = function(v) AutoAscend = v end
+})
+
+MainTab:CreateSection("--- Minigames & World ---")
+
+MainTab:CreateToggle({
+    Name = "Auto Race Win",
+    CurrentValue = false,
+    Flag = "AutoRace",
+    Callback = function(v) AutoRace = v end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Perfect Trade",
+    CurrentValue = false,
+    Flag = "AutoTrade",
+    Callback = function(v) AutoTrade = v end
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Cash Vine Harvest",
+    CurrentValue = false,
+    Flag = "AutoVine",
+    Callback = function(v) AutoVine = v end
+})
+
+MainTab:CreateSection("--- Utility ---")
+
+MainTab:CreateToggle({
+    Name = "Auto Collect CashDrop",
+    CurrentValue = false,
+    Flag = "AutoCashDrop",
+    Callback = function(v) AutoCashDrop = v end
+})
+
+MainTab:CreateButton({ 
+    Name = "Destroy GUI", 
+    Callback = function() 
+        local parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") or game:GetService("CoreGui")
+        if parent:FindFirstChild("AutoStatusGui") then
+            parent.AutoStatusGui:Destroy()
+        end
+        Rayfield:Destroy() 
+    end 
+})
+
+--// Hijack Developer Components Natively
+local TycoonMod = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Tycoon"):WaitForChild("Tycoon"))
+local BalancesMod = require(ReplicatedStorage.Modules.Tycoon:WaitForChild("Component"):WaitForChild("TycoonBalances"))
+local HugeMod = require(ReplicatedStorage.Modules:WaitForChild("Huge"))
+local ConfigMod = require(ReplicatedStorage:WaitForChild("Config"))
+
+local RebirthMod = require(ReplicatedStorage.Modules.Tycoon.Component:WaitForChild("Client"):WaitForChild("ClientTycoonRebirth"))
+local EvolutionMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:WaitForChild("ClientTycoonEvolution"))
+local AscensionMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:WaitForChild("ClientTycoonAscension"))
+local PhoneOffersMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:WaitForChild("ClientTycoonPhoneOffers"))
+local ClientTycoonPowersMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:WaitForChild("ClientTycoonPowers"))
+
+local RemoteRequest = require(ReplicatedStorage:WaitForChild("Core"):WaitForChild("RemoteRequest"))
+local RaceStart = RemoteRequest.new("MinigameRaceService.Start")
+local RaceEnd = RemoteRequest.new("MinigameRaceService.End")
+local TradeStart = RemoteRequest.new("MinigameTradeService.Start")
+local TradeEnd = RemoteRequest.new("MinigameTradeService.End")
+
+--// Locate Tycoon Loop Context
+local userTycoon = nil
+task.spawn(function()
+    while true do
+        local currentTycoon = nil
+        for _, v in pairs(workspace:GetChildren()) do
+            if v:IsA("Folder") and v.Name:match("Tycoon%d") then
+                if v:FindFirstChild("Owner") and v.Owner.Value == LocalPlayer then
+                    currentTycoon = v
+                end
+            end
+        end
+        
+        if currentTycoon and currentTycoon ~= userTycoon then
+            userTycoon = currentTycoon
+            
+            local purchasesFolder = userTycoon:WaitForChild("Purchases", 5)
+            if purchasesFolder then
+                local function trackPurchase(obj)
+                    if obj:IsA("Model") then
+                        obj:GetAttributeChangedSignal("Purchased"):Connect(function()
+                            if obj:GetAttribute("Purchased") == true then
+                                stats.buys = stats.buys + 1
+                            end
+                        end)
+                    end
+                end
+                for _, obj in ipairs(purchasesFolder:GetDescendants()) do trackPurchase(obj) end
+                purchasesFolder.DescendantAdded:Connect(trackPurchase)
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+--// Auto Buy Power Engine
+local powerBusy = false
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if AutoPower and not powerBusy then
+            pcall(function()
+                local localTyc = TycoonMod.getLocal()
+                if not localTyc then return end
+                local powersComp = localTyc:GetComponent(ClientTycoonPowersMod)
+                local balComp = localTyc:GetComponent(BalancesMod)
+                if not powersComp or not balComp then return end
+                local currentCash = balComp:GetCash()
+
+                for powerName, _ in pairs(ConfigMod.Powers) do
+                    if not AutoPower then break end
+                    local priceHuge = powersComp:GetUpgradePrice(powerName)
+                    if priceHuge and priceHuge <= currentCash then
+                        powerBusy = true
+                        local ok, res = pcall(function() return powersComp:UpgradeAsync(powerName) end)
+                        if ok and res ~= false then
+                            stats.powers = stats.powers + 1
+                        end
+                        task.wait(0.1)
+                        powerBusy = false
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+--// Auto Phone Deals Engine
+local phoneBusy = false
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if AutoPhone and not phoneBusy then
+            pcall(function()
+                local localTyc = TycoonMod.getLocal()
+                if not localTyc then return end
+                local phoneComp = localTyc:GetComponent(PhoneOffersMod)
+                if phoneComp and phoneComp:GetCurrentOffer() then
+                    phoneBusy = true
+                    local ok = pcall(function() phoneComp:AcceptOffer() end)
+                    if ok then stats.phones = stats.phones + 1 end
+                    task.wait(2)
+                    phoneBusy = false
+                end
+            end)
+        end
+    end
+end)
+
+--// Auto Buy Loop
+local function buyAllAffordable()
+    if not userTycoon then return end
+    for _, obj in ipairs(userTycoon.Purchases:GetDescendants()) do
+        if obj:IsA("Model") then
+            local shown = obj:GetAttribute("Shown")
+            local purchased = obj:GetAttribute("Purchased")
+            if shown == true and purchased ~= true then
+                local purchase = obj:FindFirstChild("Purchase")
+                if purchase and purchase:IsA("RemoteFunction") then
+                    pcall(function() purchase:InvokeServer() end)
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        if AutoBuy then pcall(buyAllAffordable) end
+    end
+end)
+
+--// Auto Upgrade Loop
+local upgradeRemotes = {}
+local upgradeLevel = {}   
+local lastUpgradeScan = 0
+
+local function refreshUpgradeRemotes()
+    if not userTycoon then return end
+    upgradeRemotes = {}
+    upgradeLevel = {}
+    local purchases = userTycoon:FindFirstChild("Purchases")
+    if not purchases then return end
+    for _, obj in ipairs(purchases:GetDescendants()) do
+        if obj:IsA("RemoteFunction") and obj.Name == "Upgrade" then table.insert(upgradeRemotes, obj) end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.25)
+        if AutoUpgrade and userTycoon then
+            if tick() - lastUpgradeScan > 3 then
+                refreshUpgradeRemotes()
+                lastUpgradeScan = tick()
+            end
+            for _, remote in ipairs(upgradeRemotes) do
+                if remote.Parent then
+                    local lvl = (upgradeLevel[remote] or 0) + 1
+                    while lvl <= 100 do
+                        local ok, res = pcall(function() return remote:InvokeServer(lvl) end)
+                        if (not ok) or res == false then break end
+                        upgradeLevel[remote] = lvl
+                        stats.upgrades = stats.upgrades + 1
+                        lvl = lvl + 1
+                    end
+                end
+            end
+        end
+    end
+end)
+
+--// Auto CashDrop Loop
+local processedDrops = {}
+local function collectCashDrop(drop)
+    if not drop or not drop.Parent or processedDrops[drop] then return end
+    processedDrops[drop] = true 
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then processedDrops[drop] = nil; return end
+
+    local conn
+    conn = drop.Destroying:Connect(function()
+        stats.cashdrops = stats.cashdrops + 1
+        if conn then conn:Disconnect() end
+    end)
+
+    task.spawn(function()
+        pcall(function()
+            if drop:IsA("BasePart") then
+                drop.CanCollide = false
+                drop.CFrame = hrp.CFrame
+                firetouchinterest(hrp, drop, 0)
+                firetouchinterest(hrp, drop, 1)
+            end
+            for _, p in ipairs(drop:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.CanCollide = false
+                    p.CFrame = hrp.CFrame
+                    firetouchinterest(hrp, p, 0)
+                    firetouchinterest(hrp, p, 1)
+                end
+            end
+        end)
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if AutoCashDrop then
+            local cashDropFolder = workspace:FindFirstChild("CashDrops")
+            if cashDropFolder then
+                for _, v in ipairs(cashDropFolder:GetChildren()) do
+                    if v.Name == "CashDrop" then collectCashDrop(v) end
+                end
+            end
+        end
+        for drop, _ in pairs(processedDrops) do
+            if not drop or not drop.Parent then processedDrops[drop] = nil end
+        end
+    end
+end)
+workspace.DescendantAdded:Connect(function(child)
+    if AutoCashDrop and child.Name == "CashDrop" and child.Parent and child.Parent.Name == "CashDrops" then
+        collectCashDrop(child)
+    end
+end)
+
+--// Auto Rebirth Loop
+local rebirthBusy = false
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if AutoRebirth and not rebirthBusy then
+            pcall(function()
+                local localTyc = TycoonMod.getLocal()
+                if not localTyc then return end
+                local rebComp = localTyc:GetComponent(RebirthMod)
+                local balComp = localTyc:GetComponent(BalancesMod)
+                local potential = rebComp:GetPotentialInvestors()
+                local current = balComp:GetInvestors()
+                local currentMax = HugeMod.max(current, HugeMod.toHuge(100))
+                local currentMultiplier = HugeMod.divide(potential, currentMax)
+                local targetHuge = HugeMod.toHuge(TARGET_MULTIPLIER)
+                
+                if not (currentMultiplier < targetHuge) then 
+                    rebirthBusy = true
+                    local ok = pcall(function() rebComp:RebirthAsync() end)
+                    if ok then stats.rebirths = stats.rebirths + 1 end
+                    task.wait(2) 
+                    rebirthBusy = false
+                end
+            end)
+        end
+    end
+end)
+
+--// Auto Evolve Loop
+local evolutionBusy = false
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if AutoEvolve and not evolutionBusy then
+            pcall(function()
+                local localTyc = TycoonMod.getLocal()
+                if not localTyc then return end
+                local evoComp = localTyc:GetComponent(EvolutionMod)
+                if evoComp then
+                    local progress, _ = evoComp:GetEvolutionProgress()
+                    if progress and progress >= 1 then
+                        evolutionBusy = true
+                        local ok = pcall(function() evoComp:EvolveAsync(false) end)
+                        if ok then stats.evolves = stats.evolves + 1 end
+                        task.wait(3)
+                        evolutionBusy = false
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+--// Auto Ascend Loop
+local ascendBusy = false
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if AutoAscend and not ascendBusy then
+            pcall(function()
+                local localTyc = TycoonMod.getLocal()
+                if not localTyc then return end
+                local ascComp = localTyc:GetComponent(AscensionMod)
+                if ascComp then
+                    local progress = ascComp:GetAscensionProgress()
+                    if progress and progress >= 1 then
+                        ascendBusy = true
+                        local ok = pcall(function() ascComp:AscendAsync() end)
+                        if ok then stats.ascends = stats.ascends + 1 end
+                        task.wait(5)
+                        ascendBusy = false
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+--// Auto Fruit Loop
+local Trees = {}
+local function addTree(obj) if obj:IsA("Model") and obj.Name == "LemonTree" and not table.find(Trees, obj) then table.insert(Trees, obj) end end
+local function removeTree(obj) local idx = table.find(Trees, obj); if idx then table.remove(Trees, idx) end end
+for _, v in ipairs(workspace:GetDescendants()) do addTree(v) end
+workspace.DescendantAdded:Connect(addTree)
+workspace.DescendantRemoving:Connect(removeTree)
+
+local function collectFruit(tree)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    for _, obj in ipairs(tree:GetDescendants()) do if obj:IsA("BasePart") then obj.CanCollide = false end end
+    hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
+    for _, obj in ipairs(tree:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name == "Fruit" then
+            obj.CanCollide = false
+            local cd = obj:FindFirstChild("ClickPart") and obj.ClickPart:FindFirstChildOfClass("ClickDetector")
+            if cd then
+                if not cd:GetAttribute("TrackedClick") then
+                    cd:SetAttribute("TrackedClick", true)
+                    task.wait(0.2)
+                    local ok = pcall(function() fireclickdetector(cd) end)
+                    if ok then stats.fruit = stats.fruit + 1 end
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if AutoFruit then
+            for _, tree in ipairs(Trees) do
+                if not AutoFruit then break end
+                if tree and tree.Parent then pcall(function() collectFruit(tree) end) end
+            end
+        end
+    end
+end)
+
+--// Auto Race Loop
+local raceBusy = false
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if AutoRace and not raceBusy then
+            pcall(function()
+                raceBusy = true
+                local success, raceData = RaceStart:InvokeServer()
+                if success then
+                    task.wait(1.5) 
+                    local amountEarned, msg = RaceEnd:InvokeServer(1)
+                    if amountEarned then
+                        stats.races = stats.races + 1
+                    end
+                end
+                task.wait(3) 
+                raceBusy = false
+            end)
+        end
+    end
+end)
+
+--// Auto Trade Loop (FIXED: Uses match confirmation signature '1' instead of cash parameter)
+local tradeBusy = false
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if AutoTrade and not tradeBusy then
+            pcall(function()
+                tradeBusy = true
+                local success, tradeData = TradeStart:InvokeServer()
+                if success then
+                    task.wait(2) -- Expanded to 2 seconds to safely clear the trade chart validation window
+                    
+                    -- Firing with 1 to mirror the race win signature instead of passing an arbitrary cash valuation
+                    local amountEarned, msg = TradeEnd:InvokeServer(1)
+                    
+                    if amountEarned then
+                        stats.trades = stats.trades + 1
+                    end
+                end
+                task.wait(3) 
+                tradeBusy = false
+            end)
+        end
+    end
+end)
+
+--// Auto Vine Loop
+task.spawn(function()
+    while true do
+        task.wait(5)
+        if AutoVine then
+            pcall(function()
+                local vines = CollectionService:GetTagged("CashVine")
+                for _, vine in ipairs(vines) do
+                    if not AutoVine then break end
+                    local useVineRemote = RemoteRequest.new("Use", vine)
+                    local fine, err = pcall(function() useVineRemote:InvokeServer() end)
+                    if fine then
+                        stats.vines = stats.vines + 1
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+--// Status Tracker GUI Engine (With Minimize Button)
+task.spawn(function()
+    local parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") or game:GetService("CoreGui")
+    pcall(function() if parent:FindFirstChild("AutoStatusGui") then parent.AutoStatusGui:Destroy() end end)
+
+    local gui = Instance.new("ScreenGui", parent)
+    gui.Name = "AutoStatusGui"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 9999
+
+    local expandedHeight = 270
+    local collapsedHeight = 26
+
+    local frame = Instance.new("Frame", gui)
+    frame.Size = UDim2.new(0, 240, 0, expandedHeight) 
+    frame.Position = UDim2.new(0, 15, 0, 110)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.ClipsDescendants = true
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, 0, 0, 26)
+    title.BackgroundColor3 = Color3.fromRGB(30, 32, 45)
+    title.Text = "SYSTEM AUTOMATION TRACKER"
+    title.TextColor3 = Color3.fromRGB(0, 230, 130)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 11
+    Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+    
+    local cornerHider = Instance.new("Frame", title)
+    cornerHider.Size = UDim2.new(1, 0, 0, 8)
+    cornerHider.Position = UDim2.new(0, 0, 1, -8)
+    cornerHider.BackgroundColor3 = Color3.fromRGB(30, 32, 45)
+    cornerHider.BorderSizePixel = 0
+
+    local minBtn = Instance.new("TextButton", frame)
+    minBtn.Size = UDim2.new(0, 26, 0, 26)
+    minBtn.Position = UDim2.new(1, -26, 0, 0)
+    minBtn.BackgroundTransparency = 1
+    minBtn.Text = "-"
+    minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.TextSize = 18
+
+    local body = Instance.new("TextLabel", frame)
+    body.Size = UDim2.new(1, -16, 1, -34)
+    body.Position = UDim2.new(0, 10, 0, 32)
+    body.BackgroundTransparency = 1
+    body.TextXAlignment = Enum.TextXAlignment.Left
+    body.TextYAlignment = Enum.TextYAlignment.Top
+    body.RichText = true
+    body.Text = "Initializing Core Connections..."
+    body.TextColor3 = Color3.fromRGB(240, 240, 250)
+    body.Font = Enum.Font.Code
+    body.TextSize = 11
+
+    local isMinimized = false
+    minBtn.MouseButton1Click:Connect(function()
+        isMinimized = not isMinimized
+        minBtn.Text = isMinimized and "+" or "-"
+        cornerHider.Visible = not isMinimized
+        
+        game:GetService("TweenService"):Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 240, 0, isMinimized and collapsedHeight or expandedHeight)
+        }):Play()
+    end)
+
+    local UIS = game:GetService("UserInputService")
+    local dragging, ds, sp
+    title.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging, ds, sp = true, i.Position, frame.Position
+            i.Changed:Connect(function() if i.UserInputState == Enum.UserInputState.End then dragging = false end end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - ds
+            frame.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end
+    end)
+
+    local function statusLight(b) return b and "<font color='#00FF8C'>ACTIVE</font>" or "<font color='#666677'>OFF</font>" end
+
+    local function fetchLiveCash()
+        local ok, res = pcall(function()
+            if LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild("Cash") then
+                return tostring(LocalPlayer.leaderstats.Cash.Value)
+            end
+            local localTyc = TycoonMod.getLocal()
+            if localTyc then
+                local balComp = localTyc:GetComponent(BalancesMod)
+                if balComp then return HugeMod.formatShort(balComp:GetCash()) end
+            end
+            return "0"
+        end)
+        return ok and res or "0"
+    end
+
+    while gui.Parent do
+        local cashStr = fetchLiveCash()
+        body.Text = string.format(
+            "<b>Cash:</b> $%s\n" ..
+            "<b>Target Multi:</b> x%d\n" ..
+            "-----------------------------\n" ..
+            "<b>Buys:</b>  %d [%s]\n" ..
+            "<b>Upgr:</b>  %d [%s]\n" ..
+            "<b>Powr:</b>  %d [%s]\n" ..
+            "<b>Fruit:</b> %d [%s]\n" ..
+            "<b>Drops:</b> %d [%s]\n" ..
+            "<b>Phone:</b> %d [%s]\n" ..
+            "<b>Race:</b>  %d [%s]\n" ..   
+            "<b>Trade:</b> %d [%s]\n" ..   
+            "<b>Vines:</b> %d [%s]\n" ..   
+            "<b>Reb:</b>   %d [%s]\n" ..
+            "<b>Evo:</b>   %d [%s]\n" ..
+            "<b>Asc:</b>   %d [%s]",
+            cashStr,
+            TARGET_MULTIPLIER,
+            stats.buys,     statusLight(AutoBuy),
+            stats.upgrades, statusLight(AutoUpgrade),
+            stats.powers,   statusLight(AutoPower),
+            stats.fruit,    statusLight(AutoFruit),
+            stats.cashdrops, statusLight(AutoCashDrop),
+            stats.phones,   statusLight(AutoPhone),
+            stats.races,    statusLight(AutoRace),  
+            stats.trades,   statusLight(AutoTrade), 
+            stats.vines,    statusLight(AutoVine),  
+            stats.rebirths, statusLight(AutoRebirth),
+            stats.evolves,  statusLight(AutoEvolve),
+            stats.ascends,  statusLight(AutoAscend)
+        )
+        task.wait(0.2)
+    end
+end)
