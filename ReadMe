@@ -562,8 +562,16 @@ end)
 
 --// Auto Fruit Loop
 local Trees = {}
-local function addTree(obj) if obj:IsA("Model") and obj.Name == "LemonTree" and not table.find(Trees, obj) then table.insert(Trees, obj) end end
-local function removeTree(obj) local idx = table.find(Trees, obj); if idx then table.remove(Trees, idx) end end
+local function addTree(obj) 
+    if obj:IsA("Model") and obj.Name == "LemonTree" and not table.find(Trees, obj) then 
+        table.insert(Trees, obj) 
+    end 
+end
+local function removeTree(obj) 
+    local idx = table.find(Trees, obj)
+    if idx then table.remove(Trees, idx) end 
+end
+
 for _, v in ipairs(workspace:GetDescendants()) do addTree(v) end
 workspace.DescendantAdded:Connect(addTree)
 workspace.DescendantRemoving:Connect(removeTree)
@@ -571,32 +579,62 @@ workspace.DescendantRemoving:Connect(removeTree)
 local function collectFruit(tree)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    for _, obj in ipairs(tree:GetDescendants()) do if obj:IsA("BasePart") then obj.CanCollide = false end end
-    hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
+    if not hrp then return false end 
+
+    -- Pre-check: Find unharvested fruit BEFORE moving
+    local fruitsToCollect = {}
     for _, obj in ipairs(tree:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name == "Fruit" then
-            obj.CanCollide = false
             local cd = obj:FindFirstChild("ClickPart") and obj.ClickPart:FindFirstChildOfClass("ClickDetector")
-            if cd then
-                if not cd:GetAttribute("TrackedClick") then
-                    cd:SetAttribute("TrackedClick", true)
-                    task.wait(0.2)
-                    local ok = pcall(function() fireclickdetector(cd) end)
-                    if ok then stats.fruit = stats.fruit + 1 end
-                end
+            if cd and not cd:GetAttribute("TrackedClick") then
+                table.insert(fruitsToCollect, {part = obj, detector = cd})
             end
         end
     end
+
+    -- STIPULATION: Only teleport if there is fruit that actually needs to be harvested
+    if #fruitsToCollect == 0 then return false end
+
+    -- Turn off collision for the tree elements so the player doesn't get jammed/stuck
+    for _, obj in ipairs(tree:GetDescendants()) do 
+        if obj:IsA("BasePart") then obj.CanCollide = false end 
+    end
+    
+    -- Perform Teleport
+    hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
+    
+    -- STABILIZATION DELAY: Give the physics engine half a second to settle your position
+    task.wait(0.5)
+
+    -- Process harvesting everything on this tree
+    for _, fruitData in ipairs(fruitsToCollect) do
+        fruitData.part.CanCollide = false
+        fruitData.detector:SetAttribute("TrackedClick", true)
+        
+        local ok = pcall(function() fireclickdetector(fruitData.detector) end)
+        if ok then stats.fruit = stats.fruit + 1 end
+        
+        task.wait(0.1) -- Small micro-delay between individual fruit clicks on the same tree
+    end
+
+    return true 
 end
 
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.5) 
         if AutoFruit then
             for _, tree in ipairs(Trees) do
                 if not AutoFruit then break end
-                if tree and tree.Parent then pcall(function() collectFruit(tree) end) end
+                
+                if tree and tree.Parent then 
+                    local success, harvested = pcall(function() return collectFruit(tree) end)
+                    
+                    -- MOVEMENT DELAY: If a tree was actually harvested, pause before flying to the next one
+                    if success and harvested then
+                        task.wait(1.5) 
+                    end
+                end
             end
         end
     end
@@ -774,4 +812,3 @@ task.spawn(function()
         task.wait(0.2)
     end
 end)
-     
