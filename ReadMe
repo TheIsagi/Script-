@@ -321,7 +321,7 @@ task.spawn(function()
                 local currentCash = balComp:GetCash()
 
                 for powerName, _ in pairs(ConfigMod.Powers) do
-                    if not AutoPower| then break end
+                    if not AutoPower then break end
                     local priceHuge = powersComp:GetUpgradePrice(powerName)
                     if priceHuge and priceHuge <= currentCash then
                         powerBusy = true
@@ -829,3 +829,4 @@ task.spawn(function()
         task.wait(0.2)
     end
 end)
+     
