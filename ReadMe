@@ -45,7 +45,7 @@ local Elements = { Toggles = {}, Dropdowns = {} }
 local ConfigFile = "VibeCodey_Lemon_Config.json"
 
 --// Config System Functions
-local function SaveConfig()
+local function SaveConfig(silent)
     if not writefile then return end
     local data = {
         AutoBuy = AutoBuy,
@@ -63,7 +63,11 @@ local function SaveConfig()
         AutoSaveConfig = AutoSaveConfig
     }
     writefile(ConfigFile, HttpService:JSONEncode(data))
-    Rayfield:Notify({Title = "Config Saved", Content = "Your settings have been saved successfully.", Duration = 3})
+    
+    -- Suppress notification if silent is true
+    if not silent then
+        Rayfield:Notify({Title = "Config Saved", Content = "Your settings have been saved successfully.", Duration = 3})
+    end
 end
 
 local function LoadConfig()
@@ -103,7 +107,7 @@ task.spawn(function()
     while true do
         task.wait(10)
         if AutoSaveConfig then
-            pcall(SaveConfig)
+            pcall(function() SaveConfig(true) end) -- Passes 'true' for silent saving
         end
     end
 end)
@@ -218,7 +222,7 @@ Elements.Toggles.AutoSaveConfig = SettingsTab:CreateToggle({
 
 SettingsTab:CreateButton({ 
     Name = "Save Config Now", 
-    Callback = function() SaveConfig() end 
+    Callback = function() SaveConfig(false) end 
 })
 
 SettingsTab:CreateButton({ 
@@ -599,6 +603,7 @@ task.spawn(function()
 end)
 
 --// Auto Vine Loop
+local cachedVineRemotes = {} -- Prevents memory leak from generating remotes repeatedly
 task.spawn(function()
     while true do
         task.wait(5)
@@ -607,14 +612,30 @@ task.spawn(function()
                 local vines = CollectionService:GetTagged("CashVine")
                 for _, vine in ipairs(vines) do
                     if not AutoVine then break end
-                    local useVineRemote = RemoteRequest.new("Use", vine)
-                    local fine, err = pcall(function() useVineRemote:InvokeServer() end)
-                    if fine then
+                    
+                    local useVineRemote = cachedVineRemotes[vine]
+                    if not useVineRemote then
+                        useVineRemote = RemoteRequest.new("Use", vine)
+                        cachedVineRemotes[vine] = useVineRemote
+                    end
+                    
+                    -- The game returns (Success/Amount, ErrorMsg) from UseAsync/InvokeServer
+                    local fine, res1, res2 = pcall(function() return useVineRemote:InvokeServer() end)
+                    
+                    -- Only increment if the first return value verifies it actually gave money/succeeded 
+                    if fine and res1 then
                         stats.vines = stats.vines + 1
                     end
                 end
             end)
         end
+    end
+end)
+
+-- Clear cached vines when they get destroyed
+workspace.DescendantRemoving:Connect(function(obj)
+    if cachedVineRemotes[obj] then
+        cachedVineRemotes[obj] = nil
     end
 end)
 
@@ -753,3 +774,4 @@ task.spawn(function()
         task.wait(0.2)
     end
 end)
+     
