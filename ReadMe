@@ -321,7 +321,7 @@ task.spawn(function()
                 local currentCash = balComp:GetCash()
 
                 for powerName, _ in pairs(ConfigMod.Powers) do
-                    if not AutoPower then break end
+                    if not AutoPower| then break end
                     local priceHuge = powersComp:GetUpgradePrice(powerName)
                     if priceHuge and priceHuge <= currentCash then
                         powerBusy = true
@@ -581,43 +581,60 @@ local function collectFruit(tree)
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end 
 
-    -- Pre-check: Find unharvested fruit BEFORE moving
-    local fruitsToCollect = {}
-    for _, obj in ipairs(tree:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name == "Fruit" then
-            local cd = obj:FindFirstChild("ClickPart") and obj.ClickPart:FindFirstChildOfClass("ClickDetector")
-            if cd and not cd:GetAttribute("TrackedClick") then
-                table.insert(fruitsToCollect, {part = obj, detector = cd})
+    local sweepAttempts = 0
+    local harvestedAny = false
+    local countedFruits = {} -- Prevents double-counting stats on re-clicks
+
+    -- Loop up to 3 times on the same tree to ensure nothing is missed
+    while sweepAttempts < 3 do
+        local fruitsToCollect = {}
+        
+        -- Scan for remaining valid fruits on this tree right now
+        for _, obj in ipairs(tree:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name == "Fruit" and obj.Parent then
+                local cd = obj:FindFirstChild("ClickPart") and obj.ClickPart:FindFirstChildOfClass("ClickDetector")
+                if cd then
+                    table.insert(fruitsToCollect, {part = obj, detector = cd})
+                end
             end
         end
+
+        -- If no fruits are left on this tree, we are officially done and can leave!
+        if #fruitsToCollect == 0 then 
+            break 
+        end
+
+        -- Teleport ONLY if we confirmed fruits are active and we haven't jumped yet
+        if not harvestedAny then
+            for _, obj in ipairs(tree:GetDescendants()) do 
+                if obj:IsA("BasePart") then obj.CanCollide = false end 
+            end
+            
+            hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
+            task.wait(0.5) -- Post-teleport stabilization delay
+            harvestedAny = true
+        end
+
+        -- Harvest all fruits discovered during this specific sweep pass
+        for _, fruitData in ipairs(fruitsToCollect) do
+            if fruitData.part.Parent and fruitData.detector.Parent then
+                fruitData.part.CanCollide = false
+                
+                pcall(function() fireclickdetector(fruitData.detector) end)
+                
+                if not countedFruits[fruitData.part] then
+                    countedFruits[fruitData.part] = true
+                    stats.fruit = stats.fruit + 1
+                end
+                task.wait(0.15) -- Micro-delay between individual fruit picks
+            end
+        end
+
+        sweepAttempts = sweepAttempts + 1
+        task.wait(0.3) -- Verification gap: wait for server changes to replicate before re-scanning
     end
 
-    -- STIPULATION: Only teleport if there is fruit that actually needs to be harvested
-    if #fruitsToCollect == 0 then return false end
-
-    -- Turn off collision for the tree elements so the player doesn't get jammed/stuck
-    for _, obj in ipairs(tree:GetDescendants()) do 
-        if obj:IsA("BasePart") then obj.CanCollide = false end 
-    end
-    
-    -- Perform Teleport
-    hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
-    
-    -- STABILIZATION DELAY: Give the physics engine half a second to settle your position
-    task.wait(0.5)
-
-    -- Process harvesting everything on this tree
-    for _, fruitData in ipairs(fruitsToCollect) do
-        fruitData.part.CanCollide = false
-        fruitData.detector:SetAttribute("TrackedClick", true)
-        
-        local ok = pcall(function() fireclickdetector(fruitData.detector) end)
-        if ok then stats.fruit = stats.fruit + 1 end
-        
-        task.wait(0.1) -- Small micro-delay between individual fruit clicks on the same tree
-    end
-
-    return true 
+    return harvestedAny 
 end
 
 task.spawn(function()
@@ -630,9 +647,9 @@ task.spawn(function()
                 if tree and tree.Parent then 
                     local success, harvested = pcall(function() return collectFruit(tree) end)
                     
-                    -- MOVEMENT DELAY: If a tree was actually harvested, pause before flying to the next one
+                    -- Travel Cooldown: Wait after completing a tree before hopping to the next
                     if success and harvested then
-                        task.wait(1.5) 
+                        task.wait(1.2) 
                     end
                 end
             end
