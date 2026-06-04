@@ -5,17 +5,21 @@ local Window = Rayfield:CreateWindow({
     Name = "Vibe Code Central / Sell Lemons",
     LoadingTitle = "Vibe Codey Automation",
     LoadingSubtitle = "100% UI-Less Native Automation",
-    ConfigurationSaving = { Enabled = false },
+    ConfigurationSaving = { Enabled = false }, -- Using custom JSON config instead
     KeySystem = false,
 })
 
 local MainTab = Window:CreateTab("Main", 4483362458)
+local SettingsTab = Window:CreateTab("Settings", 10734950309) -- Gear Icon
 
 --// Services
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService") 
+local HttpService = game:GetService("HttpService")
+local GuiService = game:GetService("GuiService")
+local TeleportService = game:GetService("TeleportService")
 
 --// Variables & Configuration State
 local AutoBuy = false
@@ -27,40 +31,117 @@ local AutoRebirth = false
 local AutoEvolve = false
 local AutoAscend = false
 local AutoCashDrop = false
-local AutoRace = false     
-local AutoTrade = false    
-local AutoVine = false     
+local AutoVine = false
+local AutoReconnect = false
+local AutoSaveConfig = false
 local TARGET_MULTIPLIER = 100 
 
 local stats = { 
     buys = 0, upgrades = 0, powers = 0, fruit = 0, rebirths = 0, 
-    evolves = 0, ascends = 0, cashdrops = 0, phones = 0,
-    races = 0, trades = 0, vines = 0 
+    evolves = 0, ascends = 0, cashdrops = 0, phones = 0, vines = 0
 }
 
---// Generate UI Components
-MainTab:CreateToggle({
+local Elements = { Toggles = {}, Dropdowns = {} }
+local ConfigFile = "VibeCodey_Lemon_Config.json"
+
+--// Config System Functions
+local function SaveConfig()
+    if not writefile then return end
+    local data = {
+        AutoBuy = AutoBuy,
+        AutoUpgrade = AutoUpgrade,
+        AutoPower = AutoPower,
+        AutoFruit = AutoFruit,
+        AutoPhone = AutoPhone,
+        AutoRebirth = AutoRebirth,
+        TARGET_MULTIPLIER = TARGET_MULTIPLIER,
+        AutoEvolve = AutoEvolve,
+        AutoAscend = AutoAscend,
+        AutoCashDrop = AutoCashDrop,
+        AutoVine = AutoVine,
+        AutoReconnect = AutoReconnect,
+        AutoSaveConfig = AutoSaveConfig
+    }
+    writefile(ConfigFile, HttpService:JSONEncode(data))
+    Rayfield:Notify({Title = "Config Saved", Content = "Your settings have been saved successfully.", Duration = 3})
+end
+
+local function LoadConfig()
+    if isfile and isfile(ConfigFile) then
+        local success, decoded = pcall(function() return HttpService:JSONDecode(readfile(ConfigFile)) end)
+        if success and type(decoded) == "table" then
+            if decoded.AutoBuy ~= nil and Elements.Toggles.AutoBuy then Elements.Toggles.AutoBuy:Set(decoded.AutoBuy) end
+            if decoded.AutoUpgrade ~= nil and Elements.Toggles.AutoUpgrade then Elements.Toggles.AutoUpgrade:Set(decoded.AutoUpgrade) end
+            if decoded.AutoPower ~= nil and Elements.Toggles.AutoPower then Elements.Toggles.AutoPower:Set(decoded.AutoPower) end
+            if decoded.AutoFruit ~= nil and Elements.Toggles.AutoFruit then Elements.Toggles.AutoFruit:Set(decoded.AutoFruit) end
+            if decoded.AutoPhone ~= nil and Elements.Toggles.AutoPhone then Elements.Toggles.AutoPhone:Set(decoded.AutoPhone) end
+            if decoded.AutoRebirth ~= nil and Elements.Toggles.AutoRebirth then Elements.Toggles.AutoRebirth:Set(decoded.AutoRebirth) end
+            if decoded.AutoEvolve ~= nil and Elements.Toggles.AutoEvolve then Elements.Toggles.AutoEvolve:Set(decoded.AutoEvolve) end
+            if decoded.AutoAscend ~= nil and Elements.Toggles.AutoAscend then Elements.Toggles.AutoAscend:Set(decoded.AutoAscend) end
+            if decoded.AutoCashDrop ~= nil and Elements.Toggles.AutoCashDrop then Elements.Toggles.AutoCashDrop:Set(decoded.AutoCashDrop) end
+            if decoded.AutoVine ~= nil and Elements.Toggles.AutoVine then Elements.Toggles.AutoVine:Set(decoded.AutoVine) end
+            if decoded.AutoReconnect ~= nil and Elements.Toggles.AutoReconnect then Elements.Toggles.AutoReconnect:Set(decoded.AutoReconnect) end
+            if decoded.AutoSaveConfig ~= nil and Elements.Toggles.AutoSaveConfig then Elements.Toggles.AutoSaveConfig:Set(decoded.AutoSaveConfig) end
+            
+            if decoded.TARGET_MULTIPLIER ~= nil and Elements.Dropdowns.RebirthMulti then 
+                Elements.Dropdowns.RebirthMulti:Set({tostring(decoded.TARGET_MULTIPLIER)}) 
+            end
+            Rayfield:Notify({Title = "Config Loaded", Content = "Your saved settings have been applied.", Duration = 3})
+        end
+    end
+end
+
+local function DeleteConfig()
+    if delfile and isfile and isfile(ConfigFile) then
+        delfile(ConfigFile)
+        Rayfield:Notify({Title = "Config Deleted", Content = "Your saved settings file has been deleted.", Duration = 3})
+    end
+end
+
+--// Auto Save Loop
+task.spawn(function()
+    while true do
+        task.wait(10)
+        if AutoSaveConfig then
+            pcall(SaveConfig)
+        end
+    end
+end)
+
+--// Auto Reconnect Handler
+GuiService.ErrorMessageChanged:Connect(function(errorMessage)
+    if errorMessage and errorMessage ~= "" and AutoReconnect then
+        print("Error detected: " .. errorMessage)
+        if LocalPlayer then
+            task.wait(1)
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end
+    end
+end)
+
+--// Generate Main UI Components
+Elements.Toggles.AutoBuy = MainTab:CreateToggle({
     Name = "Auto Buy",
     CurrentValue = false,
     Flag = "AutoBuy",
     Callback = function(v) AutoBuy = v end
 })
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoUpgrade = MainTab:CreateToggle({
     Name = "Auto Upgrade",
     CurrentValue = false,
     Flag = "AutoUpgrade",
     Callback = function(v) AutoUpgrade = v end
 })
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoPower = MainTab:CreateToggle({
     Name = "Auto Buy Power (UI-Less)",
     CurrentValue = false,
     Flag = "AutoPower",
     Callback = function(v) AutoPower = v end
 })
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoFruit = MainTab:CreateToggle({
     Name = "Auto Fruit",
     CurrentValue = false,
     Flag = "AutoFruit",
@@ -69,21 +150,21 @@ MainTab:CreateToggle({
 
 MainTab:CreateSection("--- Prestige & Deals ---")
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoPhone = MainTab:CreateToggle({
     Name = "Auto Phone Deals (Native UI-Less)",
     CurrentValue = false,
     Flag = "AutoPhone",
     Callback = function(v) AutoPhone = v end
 })
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoRebirth = MainTab:CreateToggle({
     Name = "Auto Rebirth (UI-Less)",
     CurrentValue = false,
     Flag = "AutoRebirth",
     Callback = function(v) AutoRebirth = v end
 })
 
-MainTab:CreateDropdown({
+Elements.Dropdowns.RebirthMulti = MainTab:CreateDropdown({
     Name = "Rebirth Multiplier Target",
     Options = {"100", "200", "300", "400", "500", "600", "700", "800", "900", "1000"},
     CurrentOption = {"100"},
@@ -95,53 +176,71 @@ MainTab:CreateDropdown({
     end
 })
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoEvolve = MainTab:CreateToggle({
     Name = "Auto Evolve (UI-Less)",
     CurrentValue = false,
     Flag = "AutoEvolve",
     Callback = function(v) AutoEvolve = v end
 })
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoAscend = MainTab:CreateToggle({
     Name = "Auto Ascend (UI-Less)",
     CurrentValue = false,
     Flag = "AutoAscend",
     Callback = function(v) AutoAscend = v end
 })
 
-MainTab:CreateSection("--- Minigames & World ---")
-
-MainTab:CreateToggle({
-    Name = "Auto Race Win",
-    CurrentValue = false,
-    Flag = "AutoRace",
-    Callback = function(v) AutoRace = v end
-})
-
-MainTab:CreateToggle({
-    Name = "Auto Perfect Trade",
-    CurrentValue = false,
-    Flag = "AutoTrade",
-    Callback = function(v) AutoTrade = v end
-})
-
-MainTab:CreateToggle({
-    Name = "Auto Cash Vine Harvest",
-    CurrentValue = false,
-    Flag = "AutoVine",
-    Callback = function(v) AutoVine = v end
-})
-
 MainTab:CreateSection("--- Utility ---")
 
-MainTab:CreateToggle({
+Elements.Toggles.AutoCashDrop = MainTab:CreateToggle({
     Name = "Auto Collect CashDrop",
     CurrentValue = false,
     Flag = "AutoCashDrop",
     Callback = function(v) AutoCashDrop = v end
 })
 
-MainTab:CreateButton({ 
+Elements.Toggles.AutoVine = MainTab:CreateToggle({
+    Name = "Auto Cash Vine Harvest",
+    CurrentValue = false,
+    Flag = "AutoVine",
+    Callback = function(v) AutoVine = v end
+})
+
+--// Generate Settings Tab Components
+SettingsTab:CreateSection("--- Automation Config ---")
+
+Elements.Toggles.AutoSaveConfig = SettingsTab:CreateToggle({
+    Name = "Auto-Save Config (Every 10s)",
+    CurrentValue = false,
+    Flag = "AutoSaveConfig",
+    Callback = function(v) AutoSaveConfig = v end
+})
+
+SettingsTab:CreateButton({ 
+    Name = "Save Config Now", 
+    Callback = function() SaveConfig() end 
+})
+
+SettingsTab:CreateButton({ 
+    Name = "Load Config", 
+    Callback = function() LoadConfig() end 
+})
+
+SettingsTab:CreateButton({ 
+    Name = "Delete Config", 
+    Callback = function() DeleteConfig() end 
+})
+
+SettingsTab:CreateSection("--- Session Utilities ---")
+
+Elements.Toggles.AutoReconnect = SettingsTab:CreateToggle({
+    Name = "Auto Reconnect (Anti-Disconnect)",
+    CurrentValue = false,
+    Flag = "AutoReconnect",
+    Callback = function(v) AutoReconnect = v end
+})
+
+SettingsTab:CreateButton({ 
     Name = "Destroy GUI", 
     Callback = function() 
         local parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") or game:GetService("CoreGui")
@@ -151,6 +250,9 @@ MainTab:CreateButton({
         Rayfield:Destroy() 
     end 
 })
+
+--// Load Config Automatically on Startup
+LoadConfig()
 
 --// Hijack Developer Components Natively
 local TycoonMod = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Tycoon"):WaitForChild("Tycoon"))
@@ -163,12 +265,7 @@ local EvolutionMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:W
 local AscensionMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:WaitForChild("ClientTycoonAscension"))
 local PhoneOffersMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:WaitForChild("ClientTycoonPhoneOffers"))
 local ClientTycoonPowersMod = require(ReplicatedStorage.Modules.Tycoon.Component.Client:WaitForChild("ClientTycoonPowers"))
-
 local RemoteRequest = require(ReplicatedStorage:WaitForChild("Core"):WaitForChild("RemoteRequest"))
-local RaceStart = RemoteRequest.new("MinigameRaceService.Start")
-local RaceEnd = RemoteRequest.new("MinigameRaceService.End")
-local TradeStart = RemoteRequest.new("MinigameTradeService.Start")
-local TradeEnd = RemoteRequest.new("MinigameTradeService.End")
 
 --// Locate Tycoon Loop Context
 local userTycoon = nil
@@ -501,55 +598,6 @@ task.spawn(function()
     end
 end)
 
---// Auto Race Loop
-local raceBusy = false
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if AutoRace and not raceBusy then
-            pcall(function()
-                raceBusy = true
-                local success, raceData = RaceStart:InvokeServer()
-                if success then
-                    task.wait(1.5) 
-                    local amountEarned, msg = RaceEnd:InvokeServer(1)
-                    if amountEarned then
-                        stats.races = stats.races + 1
-                    end
-                end
-                task.wait(3) 
-                raceBusy = false
-            end)
-        end
-    end
-end)
-
---// Auto Trade Loop (FIXED: Uses match confirmation signature '1' instead of cash parameter)
-local tradeBusy = false
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if AutoTrade and not tradeBusy then
-            pcall(function()
-                tradeBusy = true
-                local success, tradeData = TradeStart:InvokeServer()
-                if success then
-                    task.wait(2) -- Expanded to 2 seconds to safely clear the trade chart validation window
-                    
-                    -- Firing with 1 to mirror the race win signature instead of passing an arbitrary cash valuation
-                    local amountEarned, msg = TradeEnd:InvokeServer(1)
-                    
-                    if amountEarned then
-                        stats.trades = stats.trades + 1
-                    end
-                end
-                task.wait(3) 
-                tradeBusy = false
-            end)
-        end
-    end
-end)
-
 --// Auto Vine Loop
 task.spawn(function()
     while true do
@@ -581,7 +629,7 @@ task.spawn(function()
     gui.IgnoreGuiInset = true
     gui.DisplayOrder = 9999
 
-    local expandedHeight = 270
+    local expandedHeight = 240 -- Adjusted height to accommodate the vine line
     local collapsedHeight = 26
 
     local frame = Instance.new("Frame", gui)
@@ -684,10 +732,8 @@ task.spawn(function()
             "<b>Powr:</b>  %d [%s]\n" ..
             "<b>Fruit:</b> %d [%s]\n" ..
             "<b>Drops:</b> %d [%s]\n" ..
+            "<b>Vine:</b>  %d [%s]\n" ..
             "<b>Phone:</b> %d [%s]\n" ..
-            "<b>Race:</b>  %d [%s]\n" ..   
-            "<b>Trade:</b> %d [%s]\n" ..   
-            "<b>Vines:</b> %d [%s]\n" ..   
             "<b>Reb:</b>   %d [%s]\n" ..
             "<b>Evo:</b>   %d [%s]\n" ..
             "<b>Asc:</b>   %d [%s]",
@@ -698,10 +744,8 @@ task.spawn(function()
             stats.powers,   statusLight(AutoPower),
             stats.fruit,    statusLight(AutoFruit),
             stats.cashdrops, statusLight(AutoCashDrop),
+            stats.vines,    statusLight(AutoVine),
             stats.phones,   statusLight(AutoPhone),
-            stats.races,    statusLight(AutoRace),  
-            stats.trades,   statusLight(AutoTrade), 
-            stats.vines,    statusLight(AutoVine),  
             stats.rebirths, statusLight(AutoRebirth),
             stats.evolves,  statusLight(AutoEvolve),
             stats.ascends,  statusLight(AutoAscend)
