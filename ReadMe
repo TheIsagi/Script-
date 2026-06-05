@@ -360,47 +360,61 @@ task.spawn(function()
     end
 end)
 
---// Auto Buy Loop
--- Use a weak table so that when Tycoon models are destroyed after a rebirth, they are automatically garbage collected.
+--// Auto Buy Loop (Optimized)
+local unpurchasedButtons = {}
 local purchaseDebounces = setmetatable({}, {__mode = "k"})
 
-local function buyAllAffordable()
-    if not userTycoon then return end
-    
-    local purchases = userTycoon:FindFirstChild("Purchases")
-    if not purchases then return end
-
-    for _, obj in ipairs(purchases:GetDescendants()) do
-        if obj:IsA("Model") then
-            -- Check if we are already attempting to buy this specific item
-            if not purchaseDebounces[obj] then
-                local shown = obj:GetAttribute("Shown")
-                local purchased = obj:GetAttribute("Purchased")
-                
-                if shown == true and purchased ~= true then
-                    local purchase = obj:FindFirstChild("Purchase")
-                    if purchase and purchase:IsA("RemoteFunction") then
-                        -- Mark this item to prevent spamming the remote
-                        purchaseDebounces[obj] = true
-                        
-                        -- Fire the remote asynchronously so the main loop doesn't freeze
-                        task.spawn(function()
-                            pcall(function() purchase:InvokeServer() end)
-                            
-                            -- Wait a full second to give the server time to update the attribute
-                            task.wait(1) 
-                            
-                            -- Clear the debounce so it can be retried if the purchase failed (e.g., insufficient funds)
-                            if obj and obj.Parent then
-                                purchaseDebounces[obj] = nil
-                            end
-                        end)
+-- Updates the cache every 3 seconds instead of spamming GetDescendants every 0.05 seconds
+task.spawn(function()
+    while true do
+        task.wait(3)
+        if AutoBuy and userTycoon then
+            local purchases = userTycoon:FindFirstChild("Purchases")
+            if purchases then
+                unpurchasedButtons = {}
+                for _, obj in ipairs(purchases:GetDescendants()) do
+                    if obj:IsA("Model") and obj:GetAttribute("Purchased") ~= true then
+                        local purchaseRemote = obj:FindFirstChild("Purchase")
+                        if purchaseRemote and purchaseRemote:IsA("RemoteFunction") then
+                            table.insert(unpurchasedButtons, obj)
+                        end
                     end
                 end
             end
         end
     end
-end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.2) 
+        if AutoBuy then
+            for i = #unpurchasedButtons, 1, -1 do
+                local obj = unpurchasedButtons[i]
+                if obj and obj.Parent then
+                    local shown = obj:GetAttribute("Shown")
+                    local purchased = obj:GetAttribute("Purchased")
+                    
+                    if purchased == true then
+                        table.remove(unpurchasedButtons, i) 
+                    elseif shown == true and not purchaseDebounces[obj] then
+                        local purchase = obj:FindFirstChild("Purchase")
+                        if purchase then
+                            purchaseDebounces[obj] = true
+                            task.spawn(function()
+                                pcall(function() purchase:InvokeServer() end)
+                                task.wait(1.5)
+                                if obj and obj.Parent then purchaseDebounces[obj] = nil end
+                            end)
+                        end
+                    end
+                else
+                    table.remove(unpurchasedButtons, i)
+                end
+            end
+        end
+    end
+end)
 
 task.spawn(function()
     while true do
@@ -409,7 +423,7 @@ task.spawn(function()
     end
 end)
 
---// Auto Upgrade Loop
+--// Auto Upgrade Loop (Optimized)
 local upgradeRemotes = {}
 local upgradeLevel = {}   
 local lastUpgradeScan = 0
@@ -427,21 +441,25 @@ end
 
 task.spawn(function()
     while true do
-        task.wait(0.25)
+        task.wait(0.5) 
         if AutoUpgrade and userTycoon then
-            if tick() - lastUpgradeScan > 3 then
+            if tick() - lastUpgradeScan > 5 then
                 refreshUpgradeRemotes()
                 lastUpgradeScan = tick()
             end
             for _, remote in ipairs(upgradeRemotes) do
                 if remote.Parent then
                     local lvl = (upgradeLevel[remote] or 0) + 1
-                    while lvl <= 100 do
+                    local maxUpgradesPerTick = 0 
+                    
+                    -- Caps the loop at 5 upgrades per tick to stop CPU locking
+                    while lvl <= 100 and maxUpgradesPerTick < 5 do
                         local ok, res = pcall(function() return remote:InvokeServer(lvl) end)
                         if (not ok) or res == false then break end
                         upgradeLevel[remote] = lvl
                         stats.upgrades = stats.upgrades + 1
                         lvl = lvl + 1
+                        maxUpgradesPerTick = maxUpgradesPerTick + 1
                     end
                 end
             end
@@ -585,12 +603,10 @@ task.spawn(function()
     end
 end)
 
---// Auto Fruit Loop
+--// Auto Fruit Loop (Optimized)
 local Trees = {}
 local function addTree(obj) 
-    if obj:IsA("Model") and obj.Name == "LemonTree" and not table.find(Trees, obj) then 
-        table.insert(Trees, obj) 
-    end 
+    if obj:IsA("Model") and obj.Name == "LemonTree" and not table.find(Trees, obj) then table.insert(Trees, obj) end 
 end
 local function removeTree(obj) 
     local idx = table.find(Trees, obj)
@@ -606,81 +622,45 @@ local function collectFruit(tree)
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end 
 
-    local sweepAttempts = 0
-    local harvestedAny = false
-    local countedFruits = {} -- Prevents double-counting stats on re-clicks
-
-    -- Loop up to 3 times on the same tree to ensure nothing is missed
-    while sweepAttempts < 3 do
-        local fruitsToCollect = {}
-        
-        -- Scan for remaining valid fruits on this tree right now
-        for _, obj in ipairs(tree:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Name == "Fruit" and obj.Parent then
-                local cd = obj:FindFirstChild("ClickPart") and obj.ClickPart:FindFirstChildOfClass("ClickDetector")
-                if cd then
-                    table.insert(fruitsToCollect, {part = obj, detector = cd})
-                end
-            end
+    local fruitsToCollect = {}
+    -- Only scan once per tree
+    for _, obj in ipairs(tree:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name == "Fruit" and obj.Parent then
+            local cd = obj:FindFirstChild("ClickPart") and obj.ClickPart:FindFirstChildOfClass("ClickDetector")
+            if cd then table.insert(fruitsToCollect, {part = obj, detector = cd}) end
         end
-
-        -- If no fruits are left on this tree, we are officially done and can leave!
-        if #fruitsToCollect == 0 then 
-            break 
-        end
-
-        -- Teleport ONLY if we confirmed fruits are active and we haven't jumped yet
-        if not harvestedAny then
-            for _, obj in ipairs(tree:GetDescendants()) do 
-                if obj:IsA("BasePart") then obj.CanCollide = false end 
-            end
-            
-            hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
-            task.wait(0.5) -- Post-teleport stabilization delay
-            harvestedAny = true
-        end
-
-        -- Harvest all fruits discovered during this specific sweep pass
-        for _, fruitData in ipairs(fruitsToCollect) do
-            if fruitData.part.Parent and fruitData.detector.Parent then
-                fruitData.part.CanCollide = false
-                
-                pcall(function() fireclickdetector(fruitData.detector) end)
-                
-                if not countedFruits[fruitData.part] then
-                    countedFruits[fruitData.part] = true
-                    stats.fruit = stats.fruit + 1
-                end
-                task.wait(0.15) -- Micro-delay between individual fruit picks
-            end
-        end
-
-        sweepAttempts = sweepAttempts + 1
-        task.wait(0.3) -- Verification gap: wait for server changes to replicate before re-scanning
     end
 
-    return harvestedAny 
+    if #fruitsToCollect == 0 then return false end
+
+    hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
+    task.wait(0.2)
+
+    for _, fruitData in ipairs(fruitsToCollect) do
+        if fruitData.part.Parent and fruitData.detector.Parent then
+            fruitData.part.CanCollide = false
+            pcall(function() fireclickdetector(fruitData.detector) end)
+            stats.fruit = stats.fruit + 1
+        end
+    end
+    return true 
 end
 
 task.spawn(function()
     while true do
-        task.wait(0.5) 
+        task.wait(1.5) -- Slowed from 0.5 to prevent massive lag
         if AutoFruit then
             for _, tree in ipairs(Trees) do
                 if not AutoFruit then break end
-                
                 if tree and tree.Parent then 
-                    local success, harvested = pcall(function() return collectFruit(tree) end)
-                    
-                    -- Travel Cooldown: Wait after completing a tree before hopping to the next
-                    if success and harvested then
-                        task.wait(1.2) 
-                    end
+                    collectFruit(tree)
+                    task.wait(0.1) 
                 end
             end
         end
     end
 end)
+
 
 --// Auto Vine Loop
 local cachedVineRemotes = {} -- Prevents memory leak from generating remotes repeatedly
@@ -851,7 +831,7 @@ task.spawn(function()
             stats.evolves,  statusLight(AutoEvolve),
             stats.ascends,  statusLight(AutoAscend)
         )
-        task.wait(0.2)
+        task.wait(1)
     end
 end)
      
