@@ -361,16 +361,41 @@ task.spawn(function()
 end)
 
 --// Auto Buy Loop
+-- Use a weak table so that when Tycoon models are destroyed after a rebirth, they are automatically garbage collected.
+local purchaseDebounces = setmetatable({}, {__mode = "k"})
+
 local function buyAllAffordable()
     if not userTycoon then return end
-    for _, obj in ipairs(userTycoon.Purchases:GetDescendants()) do
+    
+    local purchases = userTycoon:FindFirstChild("Purchases")
+    if not purchases then return end
+
+    for _, obj in ipairs(purchases:GetDescendants()) do
         if obj:IsA("Model") then
-            local shown = obj:GetAttribute("Shown")
-            local purchased = obj:GetAttribute("Purchased")
-            if shown == true and purchased ~= true then
-                local purchase = obj:FindFirstChild("Purchase")
-                if purchase and purchase:IsA("RemoteFunction") then
-                    pcall(function() purchase:InvokeServer() end)
+            -- Check if we are already attempting to buy this specific item
+            if not purchaseDebounces[obj] then
+                local shown = obj:GetAttribute("Shown")
+                local purchased = obj:GetAttribute("Purchased")
+                
+                if shown == true and purchased ~= true then
+                    local purchase = obj:FindFirstChild("Purchase")
+                    if purchase and purchase:IsA("RemoteFunction") then
+                        -- Mark this item to prevent spamming the remote
+                        purchaseDebounces[obj] = true
+                        
+                        -- Fire the remote asynchronously so the main loop doesn't freeze
+                        task.spawn(function()
+                            pcall(function() purchase:InvokeServer() end)
+                            
+                            -- Wait a full second to give the server time to update the attribute
+                            task.wait(1) 
+                            
+                            -- Clear the debounce so it can be retried if the purchase failed (e.g., insufficient funds)
+                            if obj and obj.Parent then
+                                purchaseDebounces[obj] = nil
+                            end
+                        end)
+                    end
                 end
             end
         end
@@ -379,7 +404,7 @@ end
 
 task.spawn(function()
     while true do
-        task.wait(0.05)
+        task.wait(0.1) -- Slightly increased to 0.1s to reduce CPU load while remaining very fast
         if AutoBuy then pcall(buyAllAffordable) end
     end
 end)
