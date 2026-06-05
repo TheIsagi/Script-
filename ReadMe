@@ -2,8 +2,8 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Vibe Code Central / Sell Lemons",
-    LoadingTitle = "Vibe Codey Automation",
+    Name = "LongLong / Sell Lemons",
+    LoadingTitle = "Long Long Native Automation",
     LoadingSubtitle = "100% UI-Less Native Automation",
     ConfigurationSaving = { Enabled = false }, -- Using custom JSON config instead
     KeySystem = false,
